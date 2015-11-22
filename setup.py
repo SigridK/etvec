@@ -25,7 +25,7 @@ test_requirements = [
 setup(
     name='etvec',
     version='0.1.0',
-    description=""A python library for changing readers' eye gazaze recordings into vector representations for natural language processing research"",
+    description="A python library for changing readers' eye gazaze recordings into vector representations for natural language processing research",
     long_description=readme + '\n\n' + history,
     author="Sigrid Klerke",
     author_email='sigridklerke@gmail.com',
