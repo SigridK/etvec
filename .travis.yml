@@ -10,7 +10,6 @@ deploy:
   provider: pypi
   user: SigridK
 env:
-- TOXENV=py35
 - TOXENV=py34
 - TOXENV=py33
 - TOXENV=py27
