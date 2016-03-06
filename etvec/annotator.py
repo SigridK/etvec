@@ -12,9 +12,10 @@ and an optional label column.
 # using the same unit as reader-coordinates
 # (i.e.: dundee:wordID,Line; tobii:x_pxls,y_pxls)
 import pandas as pd
+import numpy as np
 
 
-def annotate_coords(df, coord_df, fixcount=True, dundee=True):
+def annotate_coords(df, coord_df, fixcount=True, dundee=False):
     """
     Expects a dataframe (from a reader-function)
     + a dataframe for looking-up (X,Y)-coordinates
@@ -25,39 +26,33 @@ def annotate_coords(df, coord_df, fixcount=True, dundee=True):
     Fixcount annotates how many times the aoi has been fixated incl. current.
     """
 
-    # go through each stimulus with groupby:
-    for stimulus, subdf in df.groupby('stim'):
+    curr_stim = None
+    df['aoi_id'] = np.NaN
+    df['aoi'] = np.NaN
 
-        # fetch relevant coordinates
-        coords = coord_df[coord_df.stim == stimulus]
+    for i, row in coord_df.iterrows():
+
+        if row['stim'] != curr_stim:
+            curr_stim = row['stim']
+            print(curr_stim)
 
         if dundee:
-            # map fixation and aoi coordinates
-            aoi_id = subdf.apply(lambda fix:
-                                 coords[((coords.left < fix.coordX) &
-                                         (coords.right > fix.coordX) &
-                                         (coords.coordY ==
-                                          fix.coordY))].id.min(),
-                                 axis=1).T
-
+            upper, lower = row['coordY'], row['coordY']
         else:
-            # map fixation and aoi coordinates
-            aoi_id = subdf.apply(lambda fix:
-                                 coords[((coords.top < fix.coordY) &
-                                         (coords.bottom > fix.coordY) &
-                                         (coords.left < fix.coordX) &
-                                         (coords.right >
-                                          fix.coordX))].id.min(),
-                                 axis=1).T
+            upper, lower = row['bottom']+100, row['top']-100
 
-        aoi = aoi_id.apply(lambda x: coords[coords.id == x].text.min())
+        left, right = row['left'], row['right']
 
-        # insert the new columns in the original df:
-        df.loc[subdf.index, 'aoi'] = aoi
-        df.loc[subdf.index, 'aoi_id'] = aoi_id
+        target = df[((left <= df.coordX) &
+                     (df.coordX <= right) &
+                     (lower <= df.coordY) &
+                     (df.coordY <= upper) &
+                     (df.stim == row['stim']))]
 
-        print(stimulus)
+        df.loc[target.index, ['aoi_id', 'aoi']] = row['id'], row['text']
+        #df.loc[target.index, 'aoi'] = row['text']
 
+    # consider keeping the coordY for knowing when lines change...
     df = df.drop(['coordX', 'coordY'], axis=1)
 
     if fixcount:
@@ -73,7 +68,7 @@ def fnummer(fix_seq):
     """
     fcount = []
     for i, x in fix_seq.items():
-        fcount.append(len([v for v in fix_seq.values[:i] if v == x]))
+        fcount.append(len([v for v in fix_seq.values[:i+1] if v == x]))
     return pd.Series(fcount, index=fix_seq.index)
 
 

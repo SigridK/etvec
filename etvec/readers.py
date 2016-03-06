@@ -140,12 +140,20 @@ def coordinates(tsv_dir, dundee=False):
 
         if dundee:
             subdf = pd.read_csv(full_path, sep=' ', header=None,
-                                usecols=[0, 3, 6, 7, 5, 12], encoding='latin1',
+                                usecols=[0, 2, 3, 5, 6, 7, 12],
+                                encoding='latin1',
                                 skipinitialspace=True,
-                                names=['text', 'coordY', 'left', 'width',
-                                       'id2', 'id'])
+                                names=['text', 'screen', 'coordY', 'id',
+                                       'left',
+                                       'width', 'id2'])
 
             subdf['right'] = subdf.left + subdf.width
+            subdf['dummy'] = 1
+            #subdf['id'] = subdf.groupby('screen').dummy.cumsum()
+
+            subdf['stim'] = stim[:4] + 'img' + subdf.screen.astype(str)
+
+            subdf.drop(['screen', 'dummy'], axis=1, inplace=True)
 
         else:  # if tobii
             subdf = pd.read_csv(full_path, sep='\t', header=0,
@@ -158,7 +166,8 @@ def coordinates(tsv_dir, dundee=False):
 
             subdf = char2tokens(subdf)
 
-        subdf['stim'] = stim
+            subdf['stim'] = stim
+
         df = pd.concat([df, subdf], axis=0, ignore_index=True)
 
     return df
