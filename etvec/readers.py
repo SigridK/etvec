@@ -114,7 +114,7 @@ def dundee(dundee_path, groups=[], label=[]):
     return result
 
 
-def coordinates(tsv_dir):
+def coordinates(tsv_dir, dundee=False):
     """
     Function for reading coordinates from generated csv-files into dataframe
     (from stimulus_builder) with columns
@@ -122,25 +122,44 @@ def coordinates(tsv_dir):
     """
     import os
 
-    fnames = [f for f in os.listdir(tsv_dir) if f.endswith('.tsv')]
+    if dundee:
+        fnames = [f for f in os.listdir(tsv_dir) if f.startswith('tx')]
+
+    else:
+        fnames = [f for f in os.listdir(tsv_dir) if f.endswith('.tsv')]
+
     # raise exception if no files:
     if len(fnames) < 1:
-        raise Exception('No files ending in .tsv in dir: {}'.format(tsv_dir))
+        raise Exception('No files of expected kind in dir: {}'.format(tsv_dir))
 
     df = pd.DataFrame()
 
     for f in fnames:
         full_path = os.path.join(tsv_dir, f)
-        stim = f.rstrip('.tsv')
-        subdf = pd.read_csv(full_path, sep='\t', header=0, encoding='utf-8',
-                            quoting=3)
+        stim = f[:-4]
 
-        # crude way of dealing with unintended .tsv-file-inclusion.
-        if set(subdf.columns) == set(['id', 'text', 'height', 'width',
-                                      'top', 'bottom', 'left', 'right']):
-            subdf['stim'] = stim
+        if dundee:
+            subdf = pd.read_csv(full_path, sep=' ', header=None,
+                                usecols=[0, 3, 6, 7, 5, 12], encoding='latin1',
+                                skipinitialspace=True,
+                                names=['text', 'coordY', 'left', 'width',
+                                       'id2', 'id'])
+
+            subdf['right'] = subdf.left + subdf.width
+
+        else:  # if tobii
+            subdf = pd.read_csv(full_path, sep='\t', header=0,
+                                encoding='utf-8', quoting=3)
+
+            if not set(subdf.columns) == set(['id', 'text', 'height',
+                                              'width', 'top', 'bottom',
+                                              'left', 'right']):
+                raise Exception('Unexpected columns in file: {}'.format(f))
+
             subdf = char2tokens(subdf)
-            df = pd.concat([df, subdf], axis=0, ignore_index=True)
+
+        subdf['stim'] = stim
+        df = pd.concat([df, subdf], axis=0, ignore_index=True)
 
     return df
 
@@ -154,8 +173,7 @@ def char2tokens(sub_df):
     sub_df['token'] = sub_df.id.apply(lambda x: int(x.split('-')[0]))
     new_df = sub_df.groupby('token', as_index=False)
     new_df = new_df.agg({'text': sum, 'height': max, 'width': sum, 'top': min,
-                         'bottom': max, 'left': min, 'right': max, 'stim': min
-                         })
+                         'bottom': max, 'left': min, 'right': max})
 
     new_df.rename(columns={'token': 'id'}, inplace=True)
 
