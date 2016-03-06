@@ -34,19 +34,14 @@ def annotate_coords(df, coord_df, label=None):
         #                  (coords.left > fix.coordX) &
         #                  (coords.right < fix.coordX))
 
-        aoi = subdf.apply(lambda fix:
-                                  coords[((coords.top < fix.coordY) &
-                                          (coords.bottom > fix.coordY) &
-                                          (coords.left < fix.coordX) &
-                                          (coords.right > fix.coordX))].text.min(),
-                                  axis=1).T
-
         aoi_id = subdf.apply(lambda fix:
                                   coords[((coords.top < fix.coordY) &
                                           (coords.bottom > fix.coordY) &
                                           (coords.left < fix.coordX) &
                                           (coords.right > fix.coordX))].id.min(),
                                   axis=1).T
+
+        aoi = aoi_id.apply(lambda x: coords[coords.id == x].text.min())
 
         # insert the new col in the original df:
         df.loc[subdf.index, ['aoi']] = aoi
