@@ -12,7 +12,7 @@ import pandas as pd
 def tobii(filename, groups=[], sep='\t', label=[],
           subj='ParticipantName', stim='MediaName', fixID='FixationIndex',
           coordX='FixationPointX (MCSpx)', coordY='FixationPointY (MCSpx)',
-          dur='GazeEventDuration'):
+          dur='GazeEventDuration', strip_stim_name='.png'):
     """
     Read specified columns of Tobii-file (incl. groups and label)
     Return standardized dataframe of one fixation per row and
@@ -41,6 +41,9 @@ def tobii(filename, groups=[], sep='\t', label=[],
 
     if label:
         df.rename(columns={label[0]: 'label'}, inplace=True)
+
+    # remove file-ending from stimuli name to make smooth mapping
+    df.stim = df.stim.str.rstrip(strip_stim_name)
 
     groupcols = ['subj', 'stim', 'fixID'] + ['group' + str(i+1) for (i, _)
                                              in enumerate(groups)]
@@ -129,10 +132,31 @@ def coordinates(tsv_dir):
     for f in fnames:
         full_path = os.path.join(tsv_dir, f)
         stim = f.rstrip('.tsv')
-        subdf = pd.read_csv(full_path, sep='\t', header=0, encoding='utf-8')
+        subdf = pd.read_csv(full_path, sep='\t', header=0, encoding='utf-8',
+                            quoting=3)
+
+        # crude way of dealing with unintended .tsv-file-inclusion.
         if set(subdf.columns) == set(['id', 'text', 'height', 'width',
                                       'top', 'bottom', 'left', 'right']):
             subdf['stim'] = stim
+            subdf = char2tokens(subdf)
             df = pd.concat([df, subdf], axis=0, ignore_index=True)
 
     return df
+
+
+def char2tokens(sub_df):
+    """
+    helper_function for changing coordinate-dfs to be token-based rather than
+    character-based with same columns, but nummerical ids instead of 'int-int'
+    """
+
+    sub_df['token'] = sub_df.id.apply(lambda x: int(x.split('-')[0]))
+    new_df = sub_df.groupby('token', as_index=False)
+    new_df = new_df.agg({'text': sum, 'height': max, 'width': sum, 'top': min,
+                         'bottom': max, 'left': min, 'right': max, 'stim': min
+                         })
+
+    new_df.rename(columns={'token': 'id'}, inplace=True)
+
+    return new_df
