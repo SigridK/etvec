@@ -11,6 +11,7 @@ and an optional label column.
 # provide x-y resolution per stimulus of words
 # using the same unit as reader-coordinates
 # (i.e.: dundee:wordID,Line; tobii:x_pxls,y_pxls)
+
 import pandas as pd
 import numpy as np
 
@@ -34,7 +35,8 @@ def annotate_coords(df, coord_df, fixcount=True, dundee=False):
 
         if row['stim'] != curr_stim:
             curr_stim = row['stim']
-            print(curr_stim)
+            if i % 10 == 0:
+                print(curr_stim)
 
         if dundee:
             upper, lower = row['coordY'], row['coordY']
@@ -50,7 +52,6 @@ def annotate_coords(df, coord_df, fixcount=True, dundee=False):
                      (df.stim == row['stim']))]
 
         df.loc[target.index, ['aoi_id', 'aoi']] = row['id'], row['text']
-        #df.loc[target.index, 'aoi'] = row['text']
 
     # consider keeping the coordY for knowing when lines change...
     df = df.drop(['coordX', 'coordY'], axis=1)
@@ -67,8 +68,15 @@ def fnummer(fix_seq):
     helper function for annotating fixation counts.
     """
     fcount = []
-    for i, x in fix_seq.items():
-        fcount.append(len([v for v in fix_seq.values[:i+1] if v == x]))
+    for i, x in enumerate(fix_seq.values):
+        fcount.append(sum([1 for v in fix_seq.values[:i+1] if v == x]))
+
+    # debugging:
+    if fcount[0] > 1:
+        raise Exception('First fixID is not recorded as such:\n'
+                        'input fixation sequence: {}, \n'
+                        'recorded fixation counts: {}'.format(fix_seq, fcount))
+
     return pd.Series(fcount, index=fix_seq.index)
 
 

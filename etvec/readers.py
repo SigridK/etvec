@@ -92,7 +92,10 @@ def dundee(dundee_path, groups=[], label=[]):
                               'FDUR': 'dur'}, inplace=True)
         subdf['subj'] = subj
         subdf['stim'] = 'tx' + stim_prefix + 'img' + subdf.TEXT.astype(str)
-        subdf['fixID'] = subdf.index
+        subdf['fixID'] = subdf.groupby('TEXT'
+                                       ).apply(lambda screen:
+                                               screen.reset_index()
+                                               ).index.get_level_values(1)
 
         for i, gr in enumerate(groups):
             subdf.rename(columns={gr: 'group'+str(i+1)}, inplace=True)
@@ -104,9 +107,6 @@ def dundee(dundee_path, groups=[], label=[]):
                    ['group'+str(i+1) for i, _ in enumerate(groups)] + \
                    ['fixID', 'dur', 'coordX', 'coordY'] + \
                    ['label' for _ in label]
-
-        # print(out_cols)
-        # subdf = subdf[out_cols]
 
         result = result.append(subdf[out_cols],
                                ignore_index=True, verify_integrity=True)
@@ -148,12 +148,10 @@ def coordinates(tsv_dir, dundee=False):
                                        'width', 'id2'])
 
             subdf['right'] = subdf.left + subdf.width
-            subdf['dummy'] = 1
-            #subdf['id'] = subdf.groupby('screen').dummy.cumsum()
 
             subdf['stim'] = stim[:4] + 'img' + subdf.screen.astype(str)
 
-            subdf.drop(['screen', 'dummy'], axis=1, inplace=True)
+            subdf.drop('screen', axis=1, inplace=True)
 
         else:  # if tobii
             subdf = pd.read_csv(full_path, sep='\t', header=0,
