@@ -32,7 +32,7 @@ def saccade_len(subdf, fix_id, aoi_ids, relative=False):
 
     else:
         result = aoi_ids.add(-subdf[subdf.fixID ==
-                             fix_id].aoi_ids.values[0]).values
+                             fix_id].aoi_id.values[0]).values
 
     return result
 
@@ -143,11 +143,14 @@ def raw_snips(df, transform, relative='direction', cut=0):
             if cut:
                 gaze_snip = [v if (np.sign(v)*v < cut) or (v is np.NaN)
                              else np.sign(v)*cut for v in gaze_snip]
-            if subj in ['sa', 'sj']:
-                print(snip_cols[:5])
-                print(fix_id, snip_idx)
-                print(gaze_snip[:5])
-                print()
+
+            # # debugging insertion
+            # if subj in ['sa', 'sj']:
+            #     print(snip_cols[:5])
+            #     print(fix_id, snip_idx)
+            #     print(gaze_snip[:5])
+            #     print()
+
             # put the sequence in the right spot of the big snip-df
             snips.loc[snip_idx, snip_cols] = gaze_snip
 

@@ -31,3 +31,11 @@ Example
 -------
 
 TBD
+
+Notes
+-----
+
+>test-data and notebooks will be published after check that anonymisation is sufficient!
+
+`examples.ipynb` reads and annotates
+`sequencer_dev.ipynb` builds raw sequence frame

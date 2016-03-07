@@ -41,7 +41,7 @@ def annotate_coords(df, coord_df, fixcount=True, dundee=False):
         if dundee:
             upper, lower = row['coordY'], row['coordY']
         else:
-            upper, lower = row['bottom']+100, row['top']-100
+            upper, lower = row['bottom'] + 100, row['top'] - 100
 
         left, right = row['left'], row['right']
 
@@ -69,7 +69,7 @@ def fnummer(fix_seq):
     """
     fcount = []
     for i, x in enumerate(fix_seq.values):
-        fcount.append(sum([1 for v in fix_seq.values[:i+1] if v == x]))
+        fcount.append(sum([1 for v in fix_seq.values[:i + 1] if v == x]))
 
     # debugging:
     if fcount[0] > 1:
@@ -89,5 +89,19 @@ def labeler(df, labels, keys=[]):
 
     for key, group in df.groupby(keys):
         df.loc[group.index, 'label'] = labels.loc[key]
+
+    return df
+
+
+def relative_dur(df):
+    """
+    Add column of durations relative to personal
+    median first fixation duration
+    """
+    subj_vals = df[df.fixcount == 1].groupby(
+        ['subj']).dur.apply(lambda x: x.median())
+
+    for subj, subdf in df.groupby('subj'):
+        df.loc[subdf.index, 'rel_dur'] = subdf.dur - subj_vals[subj]
 
     return df
