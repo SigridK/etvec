@@ -60,18 +60,11 @@ def uniq_indexer(df):
                                                axis=1).values
 
 
-def snipper(subdf):
+def snipper(subdf, trans):
     """
-    1: assume a (participant X stimulus) frame of fixations,
-    2: get the list of token-ids fixated from column 'aoi_id',
-    3: for each fixation (row) get saccade distance sequence,
-    4: return dict of fixation-ids and their saccade distance sequence
+    assume a (participant X stimulus) frame of fixations,
+    return dict of fixation-ids and gaze-transformations according to trans.
     """
-
-    trans = {'sacc': (saccade_len, False), 'saccRel': (saccade_len, False),
-             'saccAbsDirect': (saccade_len, 'direction'),
-             'fixd': (fixation_dur, False), 'fixdRel': (fixation_dur, False),
-             'fixdRelDirect': (fixation_dur, 'direction')}
 
     sequence_dict = {}
     for fix_id in subdf.fixID:
@@ -113,14 +106,17 @@ def raw_snips(df):
 
     snips['uniqID'] = uniq_indexer(df)
     snips.set_index('uniqID', append=False, inplace=True)
-    trans = ['fixd', 'fixdRel', 'fixdRelDirect',
-             'sacc', 'saccRel', 'saccAbsDirect']
 
-    col_list = zip(trans, [list(range(int(-df.fixID.max()-1),
-                                      int(df.fixID.max()+1)))
-                           for _ in range(len(trans))])
-    zeroes = len(str(int(df.fixID.max())))+2
-    col_list = [[name+str(int(i)).zfill(zeroes) for i in cols]
+    trans = {'sacc': (saccade_len, False), 'saccRel': (saccade_len, False),
+             'saccAbsDirect': (saccade_len, 'direction'),
+             'fixd': (fixation_dur, False), 'fixdRel': (fixation_dur, False),
+             'fixdRelDirect': (fixation_dur, 'direction')}
+
+    col_list = zip(trans.keys(), [list(range(int(-df.fixID.max()-1),
+                                             int(df.fixID.max()+1)))
+                                  for _ in range(len(trans.keys()))])
+
+    col_list = [[name+str(int(i)) for i in cols]
                 for name, cols in col_list]
 
     snips = snips.reindex(columns=[item for sublist in col_list
@@ -140,17 +136,20 @@ def raw_snips(df):
             print(curr_subj, rest_subj)
 
         # get sequence-dict from snipper function
-        seq_dict = snipper(subdf)
+        # according to transformation dict
+        seq_dict = snipper(subdf, trans)
 
+        # for each row, figure out which columns get filled
         for fix_id, snip_dict in seq_dict.items():
 
             snip_idx = uniq_indexer(subdf[subdf.fixID == fix_id])
+            # vulnerable to name a specific dict in trans!
             seq_len = len(snip_dict['sacc'])
             snip_cols, gaze_snips = [], []
             raw_cols = np.arange(-fix_id, (seq_len - fix_id))
             for name, snip in snip_dict.items():
                 snip_cols += [name +
-                              str(int(n)).zfill(zeroes)
+                              str(int(n))
                               for n in raw_cols]
                 gaze_snips += snip.tolist()
 
@@ -165,5 +164,38 @@ def raw_snips(df):
     return snips
 
 
-def vectors(df_list, fix_range=[-1, 3], fill=np.NaN):
-    pass
+def conllForm(snipdf, snip_window=range(-1, 3), sep=' ',
+              prefixs=['fixd', 'fixdRel', 'fixdRelDirect',
+                       'sacc', 'saccRel', 'saccAbsDirect'],
+              extra_cols=['aoi', 'aoi_id', 'fixcount'],
+              label_col='label',
+              fill=6*[np.NaN]):
+    """
+    Return a df ready to save as conll-like sequence-feature-file
+    Window are neighboring fixations to include as repr. of current fixation.
+    Prefixs selects the kinds of transformed repr. to include (default is all)
+    Fill are values to pad windows - one per prefix.
+    """
+    # generate the columns - in order - for output
+    col_list = zip(prefixs, [list(snip_window)
+                             for _ in range(len(prefixs))])
+
+    col_list = [[name+str(int(i)) for i in cols]
+                for name, cols in col_list]
+
+    col_list = [item for sublist in col_list for item in sublist]
+
+    col_list = [label_col] + extra_cols + col_list
+
+    # build conll-format
+    row_list = []
+
+    for fix_id, row in snipdf[col_list].iterrows():
+        row_string = sep.join(row.map(str).values)
+        fixID = int(float(fix_id.split('_')[-1]))
+
+        if fixID == 0:
+            row_string = '\n' + row_string
+        row_list.append(row_string)
+
+    return sep.join(col_list)+'\n'.join(row_list)
