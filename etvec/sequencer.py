@@ -3,9 +3,6 @@
 Class for extracting a pandas dataframe of gaze snippets from a reader object.
 Parameters include window size and gaze aspects.
 
-FROM DURATION_SNIPPETS.IPYNB
-
-Don't trust fixcount for now.
 """
 
 import numpy as np
@@ -25,14 +22,14 @@ def saccade_len(subdf, fix_id, aoi_ids, relative=False):
     """
 
     if relative:
-        result = (aoi_ids-aoi_ids.shift(1)).values
+        result = (aoi_ids - aoi_ids.shift(1)).values
 
         if relative == 'direction':
             result = np.sign(result)
 
     else:
         result = aoi_ids.add(-subdf[subdf.fixID ==
-                             fix_id].aoi_id.values[0]).values
+                                    fix_id].aoi_id.values[0]).values
 
     return result
 
@@ -63,7 +60,7 @@ def uniq_indexer(df):
                                                axis=1).values
 
 
-def snipper(subdf, transform=saccade_len, relative=False):
+def snipper(subdf):
     """
     1: assume a (participant X stimulus) frame of fixations,
     2: get the list of token-ids fixated from column 'aoi_id',
@@ -71,8 +68,16 @@ def snipper(subdf, transform=saccade_len, relative=False):
     4: return dict of fixation-ids and their saccade distance sequence
     """
 
-    sequence_dict = {fix_id: transform(subdf, fix_id, subdf.aoi_id, relative)
-                     for fix_id in subdf.fixID}
+    trans = {'sacc': (saccade_len, False), 'saccRel': (saccade_len, False),
+             'saccAbsDirect': (saccade_len, 'direction'),
+             'fixd': (fixation_dur, False), 'fixdRel': (fixation_dur, False),
+             'fixdRelDirect': (fixation_dur, 'direction')}
+
+    sequence_dict = {}
+    for fix_id in subdf.fixID:
+        sequence_dict[fix_id] = {name: param[0](subdf, fix_id,
+                                                subdf.aoi_id, param[1])
+                                 for (name, param) in trans.items()}
 
     return sequence_dict
 
@@ -82,20 +87,18 @@ def snipper(subdf, transform=saccade_len, relative=False):
 # -----------------
 
 
-def raw_snips(df, transform, relative='direction', cut=0):
+def raw_snips(df):
     """
     Assume dataframe formated via etvec reader+annotator.
     columns: ['subj', 'stim', 'fixID', 'dur',
               'aoi_id', 'aoi', 'fixcount', 'label']
 
-    Transform is a function of [saccade_len, fixation_dur]
+    Transform is a list of functions: [saccade_len, fixation_dur]
 
     Relative is a keyword for the transform function;
     can be bool or 'direction', which records change as +/-1 only.
 
-    Cut can be sent to the transform function to limit extreme values.
-    Default [0] does not cut any values.
-
+    (Cut should be implemented later)
     """
 
     # make sure fixID and aoi_id are 0-indexed ()
@@ -104,19 +107,24 @@ def raw_snips(df, transform, relative='direction', cut=0):
     if df[df.aoi_id == 0].shape[0] == 0:
         df.aoi_id = df.aoi_id - 1
 
-    # get the maximum fixation number:
-    max_fixID = df.fixID.max()
-
     # generate empty snippet-dataframe of
     # (fixID X relative fixID distance)
-    snips = pd.DataFrame(index=df.index,
-                         columns=np.arange(-(max_fixID + 1), max_fixID + 1))
-    snips['aoi'] = df.aoi
-    snips['aoi_id'] = df.aoi_id
-    snips['label'] = df.label
-    snips['fixcount'] = df.fixcount
+    snips = pd.DataFrame()
+
     snips['uniqID'] = uniq_indexer(df)
     snips.set_index('uniqID', append=False, inplace=True)
+    trans = ['fixd', 'fixdRel', 'fixdRelDirect',
+             'sacc', 'saccRel', 'saccAbsDirect']
+
+    col_list = zip(trans, [list(range(int(-df.fixID.max()-1),
+                                      int(df.fixID.max()+1)))
+                           for _ in range(len(trans))])
+    zeroes = len(str(int(df.fixID.max())))+2
+    col_list = [[name+str(int(i)).zfill(zeroes) for i in cols]
+                for name, cols in col_list]
+
+    snips = snips.reindex(columns=[item for sublist in col_list
+                                   for item in sublist])
 
     # for debugging timing
     rest_subj = len(df.subj.unique())
@@ -132,19 +140,30 @@ def raw_snips(df, transform, relative='direction', cut=0):
             print(curr_subj, rest_subj)
 
         # get sequence-dict from snipper function
-        seq_dict = snipper(subdf, transform, relative)
+        seq_dict = snipper(subdf)
 
-        for fix_id, gaze_snip in seq_dict.items():
+        for fix_id, snip_dict in seq_dict.items():
 
-            snip_cols = np.arange(-fix_id, (len(gaze_snip) - fix_id))
             snip_idx = uniq_indexer(subdf[subdf.fixID == fix_id])
-
-            # handle cut-value:
-            if cut:
-                gaze_snip = [v if (np.sign(v)*v < cut) or (v is np.NaN)
-                             else np.sign(v)*cut for v in gaze_snip]
+            seq_len = len(snip_dict['sacc'])
+            snip_cols, gaze_snips = [], []
+            raw_cols = np.arange(-fix_id, (seq_len - fix_id))
+            for name, snip in snip_dict.items():
+                snip_cols += [name +
+                              str(int(n)).zfill(zeroes)
+                              for n in raw_cols]
+                gaze_snips += snip.tolist()
 
             # put the sequence in the right spot of the big snip-df
-            snips.loc[snip_idx, snip_cols] = gaze_snip
+            snips.loc[snip_idx, snip_cols] = gaze_snips
+
+    snips['aoi'] = df.aoi
+    snips['aoi_id'] = df.aoi_id
+    snips['label'] = df.label
+    snips['fixcount'] = df.fixcount
 
     return snips
+
+
+def vectors(df_list, fix_range=[-1, 3], fill=np.NaN):
+    pass
