@@ -104,6 +104,7 @@ def raw_snips(df):
     # (fixID X relative fixID distance)
     snips = pd.DataFrame()
 
+    # make new unique, readable index
     snips['uniqID'] = uniq_indexer(df)
     snips.set_index('uniqID', append=False, inplace=True)
 
@@ -156,46 +157,105 @@ def raw_snips(df):
             # put the sequence in the right spot of the big snip-df
             snips.loc[snip_idx, snip_cols] = gaze_snips
 
-    snips['aoi'] = df.aoi
-    snips['aoi_id'] = df.aoi_id
-    snips['label'] = df.label
-    snips['fixcount'] = df.fixcount
+    # insert these cols with new index!
+    df['uniqID'] = uniq_indexer(df)
+    df_copy = df.set_index('uniqID')
+    snips['aoi'] = df_copy.aoi
+    snips['aoi_id'] = df_copy.aoi_id
+    snips['label'] = df_copy.label
+    snips['fixcount'] = df_copy.fixcount
+    snips['fixID'] = df_copy.fixID
+    snips['subj'] = df_copy.subj
+    snips['stim'] = df_copy.stim
 
     return snips
 
 
-def conllForm(snipdf, snip_window=range(-1, 3), sep=' ',
-              prefixs=['fixd', 'fixdRel', 'fixdRelDirect',
-                       'sacc', 'saccRel', 'saccAbsDirect'],
-              extra_cols=['aoi', 'aoi_id', 'fixcount'],
-              label_col='label',
-              fill=6*[np.NaN]):
-    """
-    Return a df ready to save as conll-like sequence-feature-file
-    Window are neighboring fixations to include as repr. of current fixation.
-    Prefixs selects the kinds of transformed repr. to include (default is all)
-    Fill are values to pad windows - one per prefix.
-    """
-    # generate the columns - in order - for output
-    col_list = zip(prefixs, [list(snip_window)
-                             for _ in range(len(prefixs))])
+def fix2features(seqdf, i):
+    seq = seqdf.ix[i]
+    features = seq.to_dict()
+    if i == 0:
+        features['BOS'] = True
+    elif i == seqdf.shape[0]-1:
+        features['EOS'] = True
+    return features
 
-    col_list = [[name+str(int(i)) for i in cols]
-                for name, cols in col_list]
 
-    col_list = [item for sublist in col_list for item in sublist]
+def gazeseq2features(seqdf):
+    return [fix2features(seqdf, i) for i in range(seqdf.shape[0])]
 
-    col_list = [label_col] + extra_cols + col_list
 
-    # build conll-format
-    row_list = []
+def gazeseq2labels(seqdf):
+    return seqdf.label.values.tolist()
 
-    for fix_id, row in snipdf[col_list].iterrows():
-        row_string = sep.join(row.map(str).values)
-        fixID = int(float(fix_id.split('_')[-1]))
 
-        if fixID == 0:
-            row_string = '\n' + row_string
-        row_list.append(row_string)
+def gazeseq2aois(seqdf):
+    return seqdf.aoi.values.tolist()
 
-    return sep.join(col_list)+'\n'.join(row_list)
+
+def colnum(c):
+    num = ''.join(filter(str.isdigit, c))
+    if num:
+        num = int(num)
+        if '-' in c:
+            num *= -1
+    return num
+
+
+def featsNlabels(df, include_cols=['sacc', 'fixd'],
+                 include_range=range(-1, 3),
+                 include_extra=['aoi_id', 'fixcount']):
+
+    cols = include_extra
+    for prefix in include_cols:
+        cols += [c for c in df.columns if c.startswith(prefix) &
+                 (colnum(c) in include_range)]
+
+    X = []
+    y = []
+    aois = []
+
+    for _, seqdf in df.groupby(['stim', 'subj']):
+        X.append(gazeseq2features(seqdf[cols]))
+        y.append(gazeseq2labels(seqdf))
+        aois.append(gazeseq2aois(seqdf))
+
+    return X, y, aois
+
+
+# def conllForm(snipdf, snip_window=range(-1, 3), sep=' ',
+#               prefixs=['fixd', 'fixdRel', 'fixdRelDirect',
+#                        'sacc', 'saccRel', 'saccAbsDirect'],
+#               extra_cols=['aoi', 'aoi_id', 'fixcount',
+#                           'fixID', 'subj', 'stim'],
+#               label_col='label',
+#               ):
+#     """
+#     Return a df ready to save as conll-like sequence-feature-file
+#     Window are neighboring fixations to include as repr. of current fixation.
+#     Prefixs selects the kinds of transformed repr. to include (default is all)
+#     TODO add fills per column.
+#     """
+#     # generate the columns - in order - for output
+#     col_list = zip(prefixs, [list(snip_window)
+#                              for _ in range(len(prefixs))])
+
+#     col_list = [[name+str(int(i)) for i in cols]
+#                 for name, cols in col_list]
+
+#     col_list = [item for sublist in col_list for item in sublist]
+
+#     col_list = [label_col] + extra_cols + col_list
+
+#     # build conll-format
+#     row_list = []
+
+#     for fix_id, row in snipdf[col_list].iterrows():
+#         row_string = sep.join(row.map(str).values)
+#         fixID = int(float(fix_id.split('_')[-1]))
+
+#         if fixID == 0:
+#             row_string = '\n' + row_string
+#         row_list.append(row_string)
+
+#     return sep.join(col_list)+'\n'.join(row_list)
