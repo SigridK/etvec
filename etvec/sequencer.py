@@ -76,7 +76,7 @@ def snipper(subdf, trans):
 
 
 # -----------------
-# main functions
+# main function
 # -----------------
 
 
@@ -108,16 +108,16 @@ def raw_snips(df):
     snips['uniqID'] = uniq_indexer(df)
     snips.set_index('uniqID', append=False, inplace=True)
 
-    trans = {'sacc': (saccade_len, False), 'saccRel': (saccade_len, False),
+    trans = {'sacc': (saccade_len, False), 'saccRel': (saccade_len, True),
              'saccAbsDirect': (saccade_len, 'direction'),
-             'fixd': (fixation_dur, False), 'fixdRel': (fixation_dur, False),
+             'fixd': (fixation_dur, False), 'fixdRel': (fixation_dur, True),
              'fixdRelDirect': (fixation_dur, 'direction')}
 
-    col_list = zip(trans.keys(), [list(range(int(-df.fixID.max()-1),
-                                             int(df.fixID.max()+1)))
+    col_list = zip(trans.keys(), [list(range(int(-df.fixID.max() - 1),
+                                             int(df.fixID.max() + 1)))
                                   for _ in range(len(trans.keys()))])
 
-    col_list = [[name+str(int(i)) for i in cols]
+    col_list = [[name + str(int(i)) for i in cols]
                 for name, cols in col_list]
 
     snips = snips.reindex(columns=[item for sublist in col_list
@@ -171,29 +171,43 @@ def raw_snips(df):
     return snips
 
 
+# ---------------------
+# Generate crf-features (sklearn_crfsuite)
+# ---------------------
+
+
 def fix2features(seqdf, i):
     seq = seqdf.ix[i]
-    features = seq.to_dict()
+    features = {}
+
+    # Make unit-features of each column
+    #features.update(seq.map(format_seq).to_dict())
+    features.update(seq.astype(str).to_dict())
+    #features.update(seq.to_dict())
+
     if i == 0:
         features['BOS'] = True
-    elif i == seqdf.shape[0]-1:
+    elif i == seqdf.shape[0] - 1:
         features['EOS'] = True
     return features
+
+
+def format_seq(feat):
+    try:
+        int(feat)
+        return str(int(feat))
+    except:
+        return str(feat)
+    # else:
+    #     return str(feat)
 
 
 def gazeseq2features(seqdf):
     return [fix2features(seqdf, i) for i in range(seqdf.shape[0])]
 
 
-def gazeseq2labels(seqdf):
-    return seqdf.label.values.tolist()
-
-
-def gazeseq2aois(seqdf):
-    return seqdf.aoi.values.tolist()
-
-
 def colnum(c):
+    """Parse numerical suffix of columns"""
     num = ''.join(filter(str.isdigit, c))
     if num:
         num = int(num)
@@ -202,23 +216,83 @@ def colnum(c):
     return num
 
 
+def col_gr(c):
+    return ''.join(filter(str.isalpha, c))
+
+
+def vector_str(df):
+    #return df.apply(lambda x: '_'.join(x.astype(str).values.tolist()), axis=1)
+    return df.sum(axis=1)
+    #return df.prod(axis=1)
+
+
 def featsNlabels(df, include_cols=['sacc', 'fixd'],
                  include_range=range(-1, 3),
-                 include_extra=['aoi_id', 'fixcount']):
+                 include_extra=['aoi_id', 'fixcount'],
+                 uniques=True, groups=True, combine=True,
+                 inplace=False,
+                 excl_subjs=None):
+    if not inplace:
+        df_cp = df.copy()
+    else:
+        df_cp = df_cp
 
-    cols = include_extra
+    if excl_subjs:
+        df_cp = df_cp[~df_cp.subj.isin(excl_subjs)]
+
+    cols = include_extra.copy()
     for prefix in include_cols:
-        cols += [c for c in df.columns if c.startswith(prefix) &
+        cols += [c for c in df_cp.columns if c.startswith(prefix) &
                  (colnum(c) in include_range)]
 
-    X = []
-    y = []
-    aois = []
+    X, y, aois = [], [], []
+    gr_cols, comb_cols = [], []
 
-    for _, seqdf in df.groupby(['stim', 'subj']):
-        X.append(gazeseq2features(seqdf[cols]))
-        y.append(gazeseq2labels(seqdf))
-        aois.append(gazeseq2aois(seqdf))
+    # apply grouped feats
+    print('starting groups')
+    if groups:
+        gr_cols = list(set([col_gr(col) for col in cols if col[:4] in
+                           include_cols]))
+        for group in gr_cols:
+            this_gr = [col for col in cols if col_gr(col) == group]
+            df_cp.loc[:, group] = vector_str(df_cp[this_gr])
+
+    # apply combined grouped feats
+    print('staring combine')
+    if combine:
+        temp = pd.DataFrame()
+        vector_cols = [col for col in gr_cols if col_gr(col) == col]
+        for group1 in vector_cols + include_extra:
+            for group2 in vector_cols + include_extra:
+                if group1 > group2:
+                    # print('started on:', group1, group2)
+
+                    gr1s = [col for col in cols if (col_gr(col) == group1)]
+                    gr2s = [col for col in cols if (col_gr(col) == group2)]
+
+                    # remember unit-feat-combinations
+                    for a, b in zip(gr1s, gr2s):
+                        temp[a + '_' + b] = vector_str(df_cp[[a, b]])
+                        comb_cols.append(a + '_' + b)
+
+                    # handle full-vector-combinations
+                    comb_gr = 'comb_' + group1 + '_' + group2
+                    comb_cols.append(comb_gr)
+                    temp[comb_gr] = vector_str(df_cp[[group1, group2]])
+        # copy combined columns to master dataframe
+        df_cp = df_cp.join(temp)
+
+    print('cols:', len(cols))
+    print('gr_cols:', len(gr_cols))
+    print('comb_cols:', len(comb_cols))
+    for _, seqdf in df_cp.groupby(['stim', 'subj']):
+
+        # extract all features
+        X.append(gazeseq2features(seqdf[cols + gr_cols + comb_cols]))
+
+        # get labels and aois
+        y.append(seqdf.label.astype(str).values.tolist())
+        aois.append(seqdf.aoi.values.tolist())
 
     return X, y, aois
 
@@ -233,7 +307,8 @@ def featsNlabels(df, include_cols=['sacc', 'fixd'],
 #     """
 #     Return a df ready to save as conll-like sequence-feature-file
 #     Window are neighboring fixations to include as repr. of current fixation.
-#     Prefixs selects the kinds of transformed repr. to include (default is all)
+#     Prefixs selects the kinds of transformed repr. to include
+#     (default is all)
 #     TODO add fills per column.
 #     """
 #     # generate the columns - in order - for output

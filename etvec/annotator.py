@@ -80,28 +80,73 @@ def fnummer(fix_seq):
     return pd.Series(fcount, index=fix_seq.index)
 
 
-def labeler(df, labels, keys=[]):
+def labeler(df, labels, keys=[], to_quantile=False, inplace=False):
     """
     function for annotating df with labels.
     Keys should identify unique labels and exist
     both as column(s) in df and as (multi-)index in labels.
+    If to_quantile = n > 1, first transform label-column to n
+    groups by splitting into quantiles of 1/n size
     """
+    if not inplace:
+        df_cp = df.copy()
+    else:
+        df_cp = df
 
-    for key, group in df.groupby(keys):
-        df.loc[group.index, 'label'] = labels.loc[key]
+    l_cp = labels.copy()
+    if to_quantile > 1:
+        l_cp = categorize(pd.DataFrame(l_cp), [l_cp.name], to_quantile,
+                          print_bins=True)
 
-    return df
+    if keys:
+        for key, group in df_cp.groupby(keys):
+            df_cp.loc[group.index, 'label'] = l_cp.loc[key]
+
+    elif df_cp.index.shape[0] == labels.index.shape[0]:
+        df_cp['label'] = l_cp
+
+    return df_cp
 
 
-def relative_dur(df):
+def relative_dur(df, inplace=False):
     """
     Add column of durations relative to personal
     median first fixation duration
     """
-    subj_vals = df[df.fixcount == 1].groupby(
+    if not inplace:
+        df_cp = df.copy()
+    else:
+        df_cp = df_cp
+
+    subj_vals = df_cp[df_cp.fixcount == 1].groupby(
         ['subj']).dur.apply(lambda x: x.median())
 
-    for subj, subdf in df.groupby('subj'):
-        df.loc[subdf.index, 'rel_dur'] = subdf.dur - subj_vals[subj]
+    for subj, subdf in df_cp.groupby('subj'):
+        df_cp.loc[subdf.index, 'rel_dur'] = subdf.dur - subj_vals[subj]
 
-    return df
+    return df_cp
+
+
+def categorize(df, cols, n_quantiles=4, print_bins=False, inplace=False):
+    """
+    function for quantilizing columns in n_quantile bins.
+    If print_bins, print the cut-offs used.
+    TODO: implement accepting pre-defined categories.
+    """
+    if not inplace:
+        cat_df = df.copy()
+    else:
+        cat_df = df
+
+    for col in cols:
+        limits = cat_df[col].quantile([i/n_quantiles for
+                                      i in range(1, n_quantiles+1)])
+        if print_bins:
+            print('bins used for column:', col)
+            print(limits)
+            print()
+
+        cat_df[col] = cat_df[col].apply(lambda x: [i[0] for i in limits.items()
+                                        if x <= i[1]][0])
+
+    return cat_df
